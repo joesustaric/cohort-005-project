@@ -1,4 +1,10 @@
-import { Outlet } from "react-router";
+import { Outlet, useSearchParams, useNavigate, useLocation } from "react-router";
+import { useEffect } from "react";
+import { PrototypeSwitcher } from "~/components/prototype-switcher";
+import {
+  useNotificationPrototype,
+  notificationVariants,
+} from "~/components/notifications-prototype";
 import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
@@ -227,16 +233,44 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     isTeamAdmin: userIsTeamAdmin,
   } = loaderData;
 
+  // PROTOTYPE: notification-feed variants (?variant=A|B|C|D)
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const variant = searchParams.get("variant") ?? "A";
+  useEffect(() => {
+    if (searchParams.get("variant")) return;
+    const saved = sessionStorage.getItem("prototype-variant");
+    if (saved) {
+      const p = new URLSearchParams(location.search);
+      p.set("variant", saved);
+      navigate(`${location.pathname}?${p}`, { replace: true });
+    }
+  }, [location.pathname]);
+  const { slots, simulate } = useNotificationPrototype(
+    variant,
+    currentUser?.role ?? null,
+    userIsTeamAdmin
+  );
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        headerSlot={slots.sidebarHeader}
+        navSlot={slots.sidebarNav}
+        footerSlot={slots.sidebarFooter}
       />
       <main className="flex-1 overflow-y-auto">
+        {slots.topBar}
         <Outlet />
       </main>
+      {slots.overlay}
+      <PrototypeSwitcher variants={notificationVariants} current={variant}>
+        {simulate}
+      </PrototypeSwitcher>
       <DevUI
         users={users}
         currentUser={currentUser}
