@@ -110,11 +110,14 @@ describe("saving a Note", () => {
     expect(atCap.ok).toBe(true);
   });
 
-  it("refuses an empty Note", () => {
-    const result = saveNote(db, base.user.id, lessonIds[0], "   ", NOW);
+  it("deletes the Note when saved with an empty body", () => {
+    saveNote(db, base.user.id, lessonIds[0], "Draft", NOW);
 
-    expect(result.ok).toBe(false);
+    const result = saveNote(db, base.user.id, lessonIds[0], "   ", LATER);
+
+    expect(result.ok).toBe(true);
     expect(getNote(db, base.user.id, lessonIds[0])).toBeUndefined();
+    expect(listNotes(db, base.user.id)).toHaveLength(0);
   });
 });
 

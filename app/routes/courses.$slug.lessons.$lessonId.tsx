@@ -92,7 +92,6 @@ const saveNoteSchema = z.object({
   body: z
     .string()
     .trim()
-    .min(1, "Enter a note before saving.")
     .max(
       MAX_NOTE_LENGTH,
       `A note must be ${MAX_NOTE_LENGTH} characters or fewer.`

@@ -54,10 +54,13 @@ export function getNote(db: Db, userId: number, lessonId: number) {
 }
 
 export type SaveNoteResult =
-  | { ok: true; note: typeof notes.$inferSelect }
+  | { ok: true; note: typeof notes.$inferSelect | null }
   | { ok: false; error: string };
 
-/** Creates the Student's Note on a Lesson, or replaces its body and moves "last edited" on. */
+/**
+ * Creates the Student's Note on a Lesson, or replaces its body and moves
+ * "last edited" on. Saving an empty body deletes the Note.
+ */
 export function saveNote(
   db: Db,
   userId: number,
@@ -67,7 +70,10 @@ export function saveNote(
 ): SaveNoteResult {
   const trimmed = body.trim();
   if (trimmed.length === 0) {
-    return { ok: false, error: "Enter a note before saving." };
+    db.delete(notes)
+      .where(and(eq(notes.userId, userId), eq(notes.lessonId, lessonId)))
+      .run();
+    return { ok: true, note: null };
   }
   if (trimmed.length > MAX_NOTE_LENGTH) {
     return {
