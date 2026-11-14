@@ -22,7 +22,7 @@
     "seed-wayfinder-issues": "bash scripts/seed-wayfinder-issues.sh",
     "db:migrate": "drizzle-kit migrate",
     "loc": "git ls-files | grep -vE '(lock|.db|_snapshot.json)' | xargs wc -l",
-    "lint:boundaries": "depcruise app/packages"
+    "lint:boundaries": "depcruise app"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
