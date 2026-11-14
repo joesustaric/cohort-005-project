@@ -1,28 +1,35 @@
 import { data } from "react-router";
 import { eq, and } from "drizzle-orm";
-import { db } from "~/db";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import * as schema from "~/db/schema";
 import {
   UserRole,
   users,
   courses,
   enrollments,
+  lessons,
+  modules,
   purchases,
 } from "~/db/schema";
 import { getCurrentUserId } from "~/lib/session";
 import { resolveCountry } from "~/lib/country.server";
 import { checkPppAccess } from "~/lib/ppp";
 
-function getUserById(id: number) {
+export type Db = BetterSQLite3Database<typeof schema>;
+type User = typeof users.$inferSelect;
+type Course = typeof courses.$inferSelect;
+
+function getUserById(db: Db, id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
 }
 
-function getCourseById(id: number) {
+function getCourseById(db: Db, id: number) {
   return db.select().from(courses).where(eq(courses.id, id)).get();
 }
 
-function findEnrollment(userId: number, courseId: number) {
-  return db
-    .select()
+function isUserEnrolled(db: Db, userId: number, courseId: number) {
+  return !!db
+    .select({ id: enrollments.id })
     .from(enrollments)
     .where(
       and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
@@ -30,11 +37,7 @@ function findEnrollment(userId: number, courseId: number) {
     .get();
 }
 
-function isUserEnrolled(userId: number, courseId: number) {
-  return !!findEnrollment(userId, courseId);
-}
-
-function findPurchase(userId: number, courseId: number) {
+function findPurchase(db: Db, userId: number, courseId: number) {
   return db
     .select()
     .from(purchases)
@@ -42,13 +45,14 @@ function findPurchase(userId: number, courseId: number) {
     .get();
 }
 
+const SIGN_IN_FIRST = "Select a user from the DevUI panel.";
+
 // getAccess never throws — the lesson page needs to render a paywall preview for
-// signed-out and unenrolled visitors rather than erroring. The require* wrappers
-// are built on it for the routes that should just reject.
+// signed-out and unenrolled visitors rather than erroring.
 
 export type Access = {
   userId: number | null;
-  user: ReturnType<typeof getUserById>;
+  user: User | undefined;
   isAdmin: boolean;
   /** The instructor who owns this specific course. */
   isOwningInstructor: boolean;
@@ -79,20 +83,21 @@ const SIGNED_OUT: Access = {
 };
 
 export async function getAccess(
+  db: Db,
   request: Request,
   courseId: number
 ): Promise<Access> {
   const userId = await getCurrentUserId(request);
   if (!userId) return SIGNED_OUT;
 
-  const user = getUserById(userId);
+  const user = getUserById(db, userId);
   if (!user) return SIGNED_OUT;
 
-  const course = getCourseById(courseId);
+  const course = getCourseById(db, courseId);
   const isAdmin = user.role === UserRole.Admin;
   const isOwningInstructor = course?.instructorId === userId;
   const isStaff = isAdmin || isOwningInstructor;
-  const enrolled = isUserEnrolled(userId, courseId);
+  const enrolled = isUserEnrolled(db, userId, courseId);
 
   // PPP only restricts students who bought at a discount — staff are exempt.
   let ppp = {
@@ -102,7 +107,7 @@ export async function getAccess(
   };
 
   if (enrolled && !isStaff && course) {
-    const purchase = findPurchase(userId, courseId);
+    const purchase = findPurchase(db, userId, courseId);
     const currentCountry = await resolveCountry(request);
     ppp = checkPppAccess(
       course.price,
@@ -126,72 +131,110 @@ export async function getAccess(
   };
 }
 
+// The require* guards below throw a 401/403/404 Response instead of returning.
+// Use them in actions as well as loaders — loader guards don't protect actions.
+
+export type SignedIn = { userId: number; user: User; isAdmin: boolean };
+
 /**
  * Throws 401 unless someone is signed in. Returns their user id.
  */
 export async function requireUserId(request: Request): Promise<number> {
   const userId = await getCurrentUserId(request);
   if (!userId) {
-    throw data("Select a user from the DevUI panel.", { status: 401 });
+    throw data(SIGN_IN_FIRST, { status: 401 });
   }
   return userId;
 }
 
 /**
+ * Throws 401 when signed out, 403 unless the user has one of `roles`. For pages
+ * that aren't about one course — the admin pages, an instructor's course list.
+ */
+export async function requireRole(
+  db: Db,
+  request: Request,
+  roles: readonly UserRole[]
+): Promise<SignedIn> {
+  const userId = await requireUserId(request);
+  const user = getUserById(db, userId);
+  if (!user) {
+    throw data(SIGN_IN_FIRST, { status: 401 });
+  }
+  if (!roles.includes(user.role)) {
+    throw data("You don't have permission to do that.", { status: 403 });
+  }
+  return { userId, user, isAdmin: user.role === UserRole.Admin };
+}
+
+/**
  * Throws 401 when signed out, 403 when the user can't see the course's content.
- * Use in actions — loader guards don't protect actions.
  */
 export async function requireContentAccess(
+  db: Db,
   request: Request,
   courseId: number
-): Promise<Access> {
-  const access = await getAccess(request, courseId);
+): Promise<Access & SignedIn> {
+  const access = await getAccess(db, request, courseId);
 
-  if (!access.userId) {
-    throw data("Select a user from the DevUI panel.", { status: 401 });
+  if (!access.userId || !access.user) {
+    throw data(SIGN_IN_FIRST, { status: 401 });
   }
 
   if (!access.canViewContent) {
     throw data("You must be enrolled in this course.", { status: 403 });
   }
 
-  return access;
+  return { ...access, userId: access.userId, user: access.user };
 }
 
 /**
- * Throws unless the user is the course's own instructor, or an admin.
+ * Throws 401 when signed out, 404 when the course doesn't exist, 403 unless
+ * the user is the course's own instructor or an admin.
  */
 export async function requireStaff(
+  db: Db,
   request: Request,
   courseId: number
-): Promise<Access> {
-  const access = await getAccess(request, courseId);
-
-  if (!access.userId) {
-    throw data("Select a user from the DevUI panel.", { status: 401 });
+): Promise<SignedIn & { course: Course }> {
+  const userId = await requireUserId(request);
+  const user = getUserById(db, userId);
+  if (!user) {
+    throw data(SIGN_IN_FIRST, { status: 401 });
   }
 
-  if (!access.isStaff) {
+  const course = getCourseById(db, courseId);
+  if (!course) {
+    throw data("Course not found.", { status: 404 });
+  }
+
+  const isAdmin = user.role === UserRole.Admin;
+  if (!isAdmin && course.instructorId !== userId) {
     throw data("Only this course's instructor can do that.", { status: 403 });
   }
 
-  return access;
+  return { userId, user, isAdmin, course };
 }
 
 /**
- * Throws unless the user is an instructor or an admin, without tying them to a
- * particular course — for pages that span all of someone's courses.
+ * Throws 404 unless the lesson is in the course, so access to one course can't
+ * reach a lesson in another by posting its id. Check access to the course first.
  */
-export async function requireInstructorOrAdmin(request: Request) {
-  const userId = await requireUserId(request);
-  const user = getUserById(userId);
-
-  if (
-    !user ||
-    (user.role !== UserRole.Instructor && user.role !== UserRole.Admin)
-  ) {
-    throw data("Only instructors can access this page.", { status: 403 });
+export function requireLessonInCourse(
+  db: Db,
+  lessonId: number,
+  courseId: number
+) {
+  const lesson = db
+    .select()
+    .from(lessons)
+    .where(eq(lessons.id, lessonId))
+    .get();
+  const module = lesson
+    ? db.select().from(modules).where(eq(modules.id, lesson.moduleId)).get()
+    : undefined;
+  if (!lesson || !module || module.courseId !== courseId) {
+    throw data("Lesson not found in this course.", { status: 404 });
   }
-
-  return { userId, user, isAdmin: user.role === UserRole.Admin };
+  return { lesson, module };
 }
