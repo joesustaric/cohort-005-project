@@ -40,6 +40,7 @@ function addCourse(
   title: string,
   options: {
     instructorId?: number;
+    categoryId?: number;
     status?: CourseStatus;
     createdAt?: string;
   } = {}
@@ -53,7 +54,7 @@ function addCourse(
       description: `${title} description`,
       salesCopy: markdown(title),
       instructorId: options.instructorId ?? instructor.id,
-      categoryId,
+      categoryId: options.categoryId ?? categoryId,
       status: options.status ?? CourseStatus.Published,
       createdAt: options.createdAt,
     })
@@ -77,7 +78,11 @@ function addLessons(courseId: number, perModule: number[]) {
 }
 
 function addCategory(name: string) {
-  db.insert(schema.categories).values({ name, slug: name.toLowerCase() }).run();
+  return db
+    .insert(schema.categories)
+    .values({ name, slug: name.toLowerCase() })
+    .returning()
+    .get();
 }
 
 function get() {
@@ -167,11 +172,16 @@ describe("stats", () => {
     });
   });
 
-  it("counts every category", () => {
-    addCategory("Design");
+  it("counts only categories that have a published course", () => {
+    const design = addCategory("Design");
     addCategory("Data");
+    addCourse("Draft design", {
+      categoryId: design.id,
+      status: CourseStatus.Draft,
+    });
+    addCourse("Published design", { categoryId: design.id });
 
-    expect(get().stats.categories).toBe(3);
+    expect(get().stats.categories).toBe(2);
   });
 
   it("counts every published course, not only the featured ones", () => {

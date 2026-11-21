@@ -1,14 +1,7 @@
 import { count, countDistinct, desc, eq, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "~/db/schema";
-import {
-  CourseStatus,
-  categories,
-  courses,
-  lessons,
-  modules,
-  users,
-} from "~/db/schema";
+import { CourseStatus, courses, lessons, modules, users } from "~/db/schema";
 
 // ─── Landing ───
 // Everything the landing page (`/`) shows about the catalogue: the newest
@@ -81,6 +74,7 @@ function getStats(db: Db): LandingStats {
     .select({
       courses: count(courses.id),
       instructors: countDistinct(courses.instructorId),
+      categories: countDistinct(courses.categoryId),
     })
     .from(courses)
     .where(isPublished)
@@ -94,16 +88,11 @@ function getStats(db: Db): LandingStats {
     .where(isPublished)
     .get();
 
-  const allCategories = db
-    .select({ categories: count(categories.id) })
-    .from(categories)
-    .get();
-
   return {
     courses: published?.courses ?? 0,
     instructors: published?.instructors ?? 0,
     lessons: publishedLessons?.lessons ?? 0,
-    categories: allCategories?.categories ?? 0,
+    categories: published?.categories ?? 0,
   };
 }
 
