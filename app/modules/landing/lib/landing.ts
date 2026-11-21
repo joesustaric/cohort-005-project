@@ -13,11 +13,11 @@ import {
 // ─── Landing ───
 // Everything the landing page (`/`) shows about the catalogue: the newest
 // published courses and the headline figures. Only published courses count;
-// a draft or archived course is not something a visitor can buy.
+// a draft or archived course is not something anyone can buy.
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
-export const FEATURED_COURSE_COUNT = 3;
+const FEATURED_COURSE_COUNT = 3;
 
 export type FeaturedCourse = {
   id: number;
