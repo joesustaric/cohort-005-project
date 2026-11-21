@@ -237,7 +237,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                 Featured Courses
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Start learning with our most popular courses
+                Start learning with our newest courses
               </p>
             </div>
             <Button asChild variant="outline">
@@ -273,7 +273,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                   <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <User className="size-3" />
-                      {course.instructorName ?? "Instructor"}
+                      {course.instructorName}
                     </span>
                     <span className="flex items-center gap-1">
                       <BookOpen className="size-3" />
