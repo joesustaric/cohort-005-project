@@ -27,7 +27,7 @@ export const writeJson = (filename: string, value: unknown): void => {
 // Sandcastle runs every agent with its permission checks skipped, so it can
 // use any tool.
 export const claudeAgent = () =>
-  sandcastle.copilot("claude-opus-5-5", {
+  sandcastle.copilot("claude-opus-5.5", {
     env: {
       COPILOT_GITHUB_TOKEN: required("COPILOT_GITHUB_TOKEN"),
     },
